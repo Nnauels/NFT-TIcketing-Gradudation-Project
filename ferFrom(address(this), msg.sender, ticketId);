@@ -1,0 +1,330 @@
+[1mdiff --git a/contracts/EventTicketing.sol b/contracts/EventTicketing.sol[m
+[1mindex 62be406..ebb24b7 100644[m
+[1m--- a/contracts/EventTicketing.sol[m
+[1m+++ b/contracts/EventTicketing.sol[m
+[36m@@ -2,14 +2,16 @@[m
+ pragma solidity ^0.8.9;[m
+ [m
+ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";[m
+[32m+[m[32mimport "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol"; //added this[m
+ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";[m
+ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";[m
+ import "@openzeppelin/contracts/access/Ownable.sol";[m
+ import "@openzeppelin/contracts/utils/Counters.sol";[m
+ import "@openzeppelin/contracts/access/AccessControl.sol";[m
+[32m+[m[32mimport "hardhat/console.sol";[m
+ [m
+ /// @custom:security-contact @Bigbadbeard[m
+[31m-contract EventTicketing is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable, AccessControl {[m
+[32m+[m[32m contract EventTicketing is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable, AccessControl, IERC721Receiver {[m
+     using Counters for Counters.Counter;[m
+ [m
+     Counters.Counter private _seatIdCounter;[m
+[36m@@ -57,15 +59,21 @@[m [mcontract EventTicketing is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable,[m
+         eventLocation = _eventLocation;[m
+         eventTime = _eventTime;[m
+         eventName = _eventName;[m
+[31m-        cost = 100;[m
+[32m+[m[32m        cost = uint256(100);[m
+ [m
+         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);[m
+     }[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+ [m
+     function _baseURI() internal pure override returns (string memory) {[m
+         return "http://www.tobedetermined.com";[m
+     }[m
+ [m
+[32m+[m[32m    function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data) external override returns (bytes4) {[m
+[32m+[m[32m        return this.onERC721Received.selector;[m
+[32m+[m[32m    }[m
+[32m+[m
+     function safeMint() public onlyOwner {[m
+         uint256 seatId = _seatIdCounter.current();[m
+         require(seatId <= maxTickets, "Max number of tickets already minted");[m
+[36m@@ -74,7 +82,6 @@[m [mcontract EventTicketing is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable,[m
+     }[m
+ [m
+   [m
+[31m-[m
+      function batchMint(uint256 mintQuantity) public onlyOwner {[m
+         uint256 seatId = _seatIdCounter.current();[m
+         require(seatId + mintQuantity <= maxTickets, "Max number of tickets already minted or batch will be too large");[m
+[36m@@ -82,6 +89,7 @@[m [mcontract EventTicketing is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable,[m
+         for(uint256 i = 0; i < mintQuantity; i++){[m
+             _safeMint(address(this), seatId);[m
+             seatId++;[m
+[32m+[m[32m            _seatIdCounter.increment();[m
+         } [m
+     }[m
+ [m
+[36m@@ -118,6 +126,10 @@[m [mcontract EventTicketing is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable,[m
+         // Store the new ticket in the tickets mapping[m
+         tickets[_ticketId] = newTicket;[m
+ [m
+[32m+[m[32m        //console.log("The Ticket is: %s", newTicket);[m
+[32m+[m[41m        [m
+[32m+[m
+[32m+[m
+         emit TicketCreated(_ticketId, msg.sender);[m
+ [m
+     }[m
+[36m@@ -135,25 +147,25 @@[m [mcontract EventTicketing is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable,[m
+         // Check that the seat number is not already in use[m
+         require(!seatTaken(_seatNumber), "Seat already taken");[m
+         // Check that enough minted tickets exist[m
+[31m-        require(_seatNumber <= _seatIdCounter.current(), "Not enough minted tickets");[m
+[32m+[m[32m        require(ticketId <= _seatIdCounter.current(), "Not enough minted tickets");[m
+         // Check that the ticket is valid[m
+[31m-        require(tickets[_seatNumber].isValid == true, "Ticket is not valid");[m
+[32m+[m[32m        require(tickets[ticketId].isValid == true, "Ticket is not valid");[m
+         // Check that the user has paid enough[m
+         require(msg.value >= tickets[_seatNumber].cost, "Not enough funds sent");[m
+ [m
+         // Update the ticket struct in memory[m
+         tickets[_seatNumber].purchaser = msg.sender;[m
+ [m
+[32m+[m
+[32m+[m
+         // Transfer the ticket to the user[m
+         ///////////Added this///////[m
+[32m+[m[32m        _approve(msg.sender, ticketId);[m
+         transferFrom(address(this), msg.sender, ticketId);[m
+         ///////////Added this/////// it will transfer from the NFT from the smart contract "address(this)" to the buyer[m
+ [m
+[31m-        // Refund any overpayment[m
+[31m-        ///I'm not sure that we need this[m
+[31m-        if (msg.value > tickets[_seatNumber].cost) {[m
+[31m-            payable(msg.sender).transfer(msg.value - tickets[_seatNumber].cost);[m
+[31m-        }[m
+[32m+[m[32m        payable(msg.sender).transfer(msg.value - tickets[_seatNumber].cost);[m
+[32m+[m[41m        [m
+ [m
+         emit TicketBought(_seatNumber, msg.sender);[m
+     }[m
+[36m@@ -224,4 +236,4 @@[m [mcontract EventTicketing is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable,[m
+         bool _isValid = tickets[ticketId].isValid;[m
+         return _isValid;[m
+     }  [m
+[31m-}[m
+[32m+[m[32m}[m
+\ No newline at end of file[m
+[1mdiff --git a/package-lock.json b/package-lock.json[m
+[1mindex 3c33c56..ea79ef0 100644[m
+[1m--- a/package-lock.json[m
+[1m+++ b/package-lock.json[m
+[36m@@ -19,7 +19,9 @@[m
+       },[m
+       "devDependencies": {[m
+         "@nomicfoundation/hardhat-ethers": "^3.0.3",[m
+[31m-        "@nomicfoundation/hardhat-toolbox": "^3.0.0"[m
+[32m+[m[32m        "@nomicfoundation/hardhat-toolbox": "^3.0.0",[m
+[32m+[m[32m        "ethereum-waffle": "^4.0.10",[m
+[32m+[m[32m        "hardhat-waffle": "^0.0.1-security"[m
+       }[m
+     },[m
+     "node_modules/@adraffy/ens-normalize": {[m
+[36m@@ -63,610 +65,723 @@[m
+         "node": ">=12"[m
+       }[m
+     },[m
+[31m-    "node_modules/@ethersproject/abi": {[m
+[31m-      "version": "5.7.0",[m
+[31m-      "resolved": "https://registry.npmjs.org/@ethersproject/abi/-/abi-5.7.0.tgz",[m
+[31m-      "integrity": "sha512-351ktp42TiRcYB3H1OP8yajPeAQstMW/yCFokj/AthP9bLHzQFPlOrxOcwYEDkUAICmOHljvN4K39OMTMUa9RA==",[m
+[31m-      "funding": [[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://gitcoin.co/grants/13/ethersjs-complete-simple-and-tiny-2"[m
+[31m-        },[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://www.buymeacoffee.com/ricmoo"[m
+[31m-        }[m
+[31m-      ],[m
+[32m+[m[32m    "node_modules/@ensdomains/ens": {[m
+[32m+[m[32m      "version": "0.4.5",[m
+[32m+[m[32m      "resolved": "https://registry.npmjs.org/@ensdomains/ens/-/ens-0.4.5.tgz",[m
+[32m+[m[32m      "integrity": "sha512-JSvpj1iNMFjK6K+uVl4unqMoa9rf5jopb8cya5UGBWz23Nw8hSNT7efgUx4BTlAPAgpNlEioUfeTyQ6J9ZvTVw==",[m
+[32m+[m[32m      "deprecated": "Please use @ensdomains/ens-contracts",[m
+[32m+[m[32m      "dev": true,[m
+[32m+[m[32m      "peer": true,[m
+       "dependencies": {[m
+[31m-        "@ethersproject/address": "^5.7.0",[m
+[31m-        "@ethersproject/bignumber": "^5.7.0",[m
+[31m-        "@ethersproject/bytes": "^5.7.0",[m
+[31m-        "@ethersproject/constants": "^5.7.0",[m
+[31m-        "@ethersproject/hash": "^5.7.0",[m
+[31m-        "@ethersproject/keccak256": "^5.7.0",[m
+[31m-        "@ethersproject/logger": "^5.7.0",[m
+[31m-        "@ethersproject/properties": "^5.7.0",[m
+[31m-        "@ethersproject/strings": "^5.7.0"[m
+[32m+[m[32m        "bluebird": "^3.5.2",[m
+[32m+[m[32m        "eth-ens-namehash": "^2.0.8",[m
+[32m+[m[32m        "solc": "^0.4.20",[m
+[32m+[m[32m        "testrpc": "0.0.1",[m
+[32m+[m[32m        "web3-utils": "^1.0.0-beta.31"[m
+       }[m
+     },[m
+[31m-    "node_modules/@ethersproject/abstract-provider": {[m
+[31m-      "version": "5.7.0",[m
+[31m-      "resolved": "https://registry.npmjs.org/@ethersproject/abstract-provider/-/abstract-provider-5.7.0.tgz",[m
+[31m-      "integrity": "sha512-R41c9UkchKCpAqStMYUpdunjo3pkEvZC3FAwZn5S5MGbXoMQOHIdHItezTETxAO5bevtMApSyEhn9+CHcDsWBw==",[m
+[31m-      "funding": [[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://gitcoin.co/grants/13/ethersjs-complete-simple-and-tiny-2"[m
+[31m-        },[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://www.buymeacoffee.com/ricmoo"[m
+[31m-        }[m
+[31m-      ],[m
+[31m-      "dependencies": {[m
+[31m-        "@ethersproject/bignumber": "^5.7.0",[m
+[31m-        "@ethersproject/bytes": "^5.7.0",[m
+[31m-        "@ethersproject/logger": "^5.7.0",[m
+[31m-        "@ethersproject/networks": "^5.7.0",[m
+[31m-        "@ethersproject/properties": "^5.7.0",[m
+[31m-        "@ethersproject/transactions": "^5.7.0",[m
+[31m-        "@ethersproject/web": "^5.7.0"[m
+[32m+[m[32m    "node_modules/@ensdomains/ens/node_modules/ansi-regex": {[m
+[32m+[m[32m      "version": "2.1.1",[m
+[32m+[m[32m      "resolved": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-2.1.1.tgz",[m
+[32m+[m[32m      "integrity": "sha512-TIGnTpdo+E3+pCyAluZvtED5p5wCqLdezCyhPZzKPcxvFplEt4i+W7OONCKgeZFT3+y5NZZfOOS/Bdcanm1MYA==",[m
+[32m+[m[32m      "dev": true,[m
+[32m+[m[32m      "peer": true,[m
+[32m+[m[32m      "engines": {[m
+[32m+[m[32m        "node": ">=0.10.0"[m
+       }[m
+     },[m
+[31m-    "node_modules/@ethersproject/abstract-signer": {[m
+[31m-      "version": "5.7.0",[m
+[31m-      "resolved": "https://registry.npmjs.org/@ethersproject/abstract-signer/-/abstract-signer-5.7.0.tgz",[m
+[31m-      "integrity": "sha512-a16V8bq1/Cz+TGCkE2OPMTOUDLS3grCpdjoJCYNnVBbdYEMSgKrU0+B90s8b6H+ByYTBZN7a3g76jdIJi7UfKQ==",[m
+[31m-      "funding": [[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://gitcoin.co/grants/13/ethersjs-complete-simple-and-tiny-2"[m
+[31m-        },[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://www.buymeacoffee.com/ricmoo"[m
+[31m-        }[m
+[31m-      ],[m
+[31m-      "dependencies": {[m
+[31m-        "@ethersproject/abstract-provider": "^5.7.0",[m
+[31m-        "@ethersproject/bignumber": "^5.7.0",[m
+[31m-        "@ethersproject/bytes": "^5.7.0",[m
+[31m-        "@ethersproject/logger": "^5.7.0",[m
+[31m-        "@ethersproject/properties": "^5.7.0"[m
+[32m+[m[32m    "node_modules/@ensdomains/ens/node_modules/camelcase": {[m
+[32m+[m[32m      "version": "3.0.0",[m
+[32m+[m[32m      "resolved": "https://registry.npmjs.org/camelcase/-/camelcase-3.0.0.tgz",[m
+[32m+[m[32m      "integrity": "sha512-4nhGqUkc4BqbBBB4Q6zLuD7lzzrHYrjKGeYaEji/3tFR5VdJu9v+LilhGIVe8wxEJPPOeWo7eg8dwY13TZ1BNg==",[m
+[32m+[m[32m      "dev": true,[m
+[32m+[m[32m      "peer": true,[m
+[32m+[m[32m      "engines": {[m
+[32m+[m[32m        "node": ">=0.10.0"[m
+       }[m
+     },[m
+[31m-    "node_modules/@ethersproject/address": {[m
+[31m-      "version": "5.7.0",[m
+[31m-      "resolved": "https://registry.npmjs.org/@ethersproject/address/-/address-5.7.0.tgz",[m
+[31m-      "integrity": "sha512-9wYhYt7aghVGo758POM5nqcOMaE168Q6aRLJZwUmiqSrAungkG74gSSeKEIR7ukixesdRZGPgVqme6vmxs1fkA==",[m
+[31m-      "funding": [[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://gitcoin.co/grants/13/ethersjs-complete-simple-and-tiny-2"[m
+[31m-        },[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://www.buymeacoffee.com/ricmoo"[m
+[31m-        }[m
+[31m-      ],[m
+[32m+[m[32m    "node_modules/@ensdomains/ens/node_modules/cliui": {[m
+[32m+[m[32m      "version": "3.2.0",[m
+[32m+[m[32m      "resolved": "https://registry.npmjs.org/cliui/-/cliui-3.2.0.tgz",[m
+[32m+[m[32m      "integrity": "sha512-0yayqDxWQbqk3ojkYqUKqaAQ6AfNKeKWRNA8kR0WXzAsdHpP4BIaOmMAG87JGuO6qcobyW4GjxHd9PmhEd+T9w==",[m
+[32m+[m[32m      "dev": true,[m
+[32m+[m[32m      "peer": true,[m
+       "dependencies": {[m
+[31m-        "@ethersproject/bignumber": "^5.7.0",[m
+[31m-        "@ethersproject/bytes": "^5.7.0",[m
+[31m-        "@ethersproject/keccak256": "^5.7.0",[m
+[31m-        "@ethersproject/logger": "^5.7.0",[m
+[31m-        "@ethersproject/rlp": "^5.7.0"[m
+[32m+[m[32m        "string-width": "^1.0.1",[m
+[32m+[m[32m        "strip-ansi": "^3.0.1",[m
+[32m+[m[32m        "wrap-ansi": "^2.0.0"[m
+       }[m
+     },[m
+[31m-    "node_modules/@ethersproject/base64": {[m
+[31m-      "version": "5.7.0",[m
+[31m-      "resolved": "https://registry.npmjs.org/@ethersproject/base64/-/base64-5.7.0.tgz",[m
+[31m-      "integrity": "sha512-Dr8tcHt2mEbsZr/mwTPIQAf3Ai0Bks/7gTw9dSqk1mQvhW3XvRlmDJr/4n+wg1JmCl16NZue17CDh8xb/vZ0sQ==",[m
+[31m-      "funding": [[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://gitcoin.co/grants/13/ethersjs-complete-simple-and-tiny-2"[m
+[31m-        },[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://www.buymeacoffee.com/ricmoo"[m
+[31m-        }[m
+[31m-      ],[m
+[32m+[m[32m    "node_modules/@ensdomains/ens/node_modules/decamelize": {[m
+[32m+[m[32m      "version": "1.2.0",[m
+[32m+[m[32m      "resolved": "https://registry.npmjs.org/decamelize/-/decamelize-1.2.0.tgz",[m
+[32m+[m[32m      "integrity": "sha512-z2S+W9X73hAUUki+N+9Za2lBlun89zigOyGrsax+KUQ6wKW4ZoWpEYBkGhQjwAjjDCkWxhY0VKEhk8wzY7F5cA==",[m
+[32m+[m[32m      "dev": true,[m
+[32m+[m[32m      "peer": true,[m
+[32m+[m[32m      "engines": {[m
+[32m+[m[32m        "node": ">=0.10.0"[m
+[32m+[m[32m      }[m
+[32m+[m[32m    },[m
+[32m+[m[32m    "node_modules/@ensdomains/ens/node_modules/fs-extra": {[m
+[32m+[m[32m      "version": "0.30.0",[m
+[32m+[m[32m      "resolved": "https://registry.npmjs.org/fs-extra/-/fs-extra-0.30.0.tgz",[m
+[32m+[m[32m      "integrity": "sha512-UvSPKyhMn6LEd/WpUaV9C9t3zATuqoqfWc3QdPhPLb58prN9tqYPlPWi8Krxi44loBoUzlobqZ3+8tGpxxSzwA==",[m
+[32m+[m[32m      "dev": true,[m
+[32m+[m[32m      "peer": true,[m
+       "dependencies": {[m
+[31m-        "@ethersproject/bytes": "^5.7.0"[m
+[32m+[m[32m        "graceful-fs": "^4.1.2",[m
+[32m+[m[32m        "jsonfile": "^2.1.0",[m
+[32m+[m[32m        "klaw": "^1.0.0",[m
+[32m+[m[32m        "path-is-absolute": "^1.0.0",[m
+[32m+[m[32m        "rimraf": "^2.2.8"[m
+       }[m
+     },[m
+[31m-    "node_modules/@ethersproject/basex": {[m
+[31m-      "version": "5.7.0",[m
+[31m-      "resolved": "https://registry.npmjs.org/@ethersproject/basex/-/basex-5.7.0.tgz",[m
+[31m-      "integrity": "sha512-ywlh43GwZLv2Voc2gQVTKBoVQ1mti3d8HK5aMxsfu/nRDnMmNqaSJ3r3n85HBByT8OpoY96SXM1FogC533T4zw==",[m
+[31m-      "funding": [[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://gitcoin.co/grants/13/ethersjs-complete-simple-and-tiny-2"[m
+[31m-        },[m
+[31m-        {[m
+[31m-          "type": "individual",[m
+[31m-          "url": "https://www.buymeacoffee.com/ricmoo"[m
+[31m-        }[m
+[31m-      ],[m
+[32m+[m[32m    "node_modules/@ensdomains/ens/node_modules/get-caller-file": {[m
+[32m+[m[32m      "version": "1.0.3",[m
+[32m+[m[32m      "resolved": "https://registry.npmjs.org/get-caller-file/-/get-caller-file-1.0.3.tgz",[m
+[32m+[m[32m      "integrity": "sha512-3t6rVToeoZfYSGd8YoLFR2DJkiQrIiUrGcjvFX2mDw3bn6k2OtwHN0TNCLbBO+w8qTvimhDkv+LSscbJY1vE6w==",[m
+[32m+[m[32m      "dev": true,[m
+[32m+[m[32m      "peer": true[m
+[32m+[m[32m    },[m
+[32m+[m[32m    "node_modules/@ensdomains/ens/node_modules/is-fullwidth-code-point": {[m
+[32m+[m[32m      "version": "1.0.0",[m
+[32m+[m[32m      "resolved": "https://registry.npmjs.org/is-fullwidth-code-point/-/is-fullwidth-code-point-1.0.0.tgz",[m
+[32m+[m[32m      "integrity": "sha512-1pqUqRjkhPJ9miNq9SwMfdvi6lBJcd6eFxvfaivQhaH3SgisfiuudvFntdKOmxuee/77l+FPjKrQjWvmPjWrRw==",[m
+[32m+[m[32m      "dev": true,[m
+[32m+[m[32m      "peer": true,[m
+       "dependencies": {[m
+[31m-   
